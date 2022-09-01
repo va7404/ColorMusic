@@ -26,17 +26,17 @@
 #define KEEP_SETTINGS 1     // хранить ВСЕ настройки в энергонезависимой памяти
 #define KEEP_STATE 1		    // сохранять в памяти состояние вкл/выкл системы (с пульта)
 #define RESET_SETTINGS 0    // сброс настроек в EEPROM памяти (поставить 1, прошиться, поставить обратно 0, прошиться. Всё)
-#define SETTINGS_LOG 0      // вывод всех настроек из EEPROM в порт при запуске
+#define SETTINGS_LOG 1      // вывод всех настроек из EEPROM в порт при запуске
 
 // ----- настройки ленты
-#define NUM_LEDS 60        // количество светодиодов (данная версия поддерживает до 410 штук)
+#define NUM_LEDS 180        // количество светодиодов (данная версия поддерживает до 410 штук)
 #define CURRENT_LIMIT 3000  // лимит по току в МИЛЛИАМПЕРАХ, автоматически управляет яркостью (пожалей свой блок питания!) 0 - выключить лимит
 byte BRIGHTNESS = 200;      // яркость по умолчанию (0 - 255)
 
 // ----- пины подключения
 #define SOUND_R A2         // аналоговый пин вход аудио, правый канал
 #define SOUND_L A1         // аналоговый пин вход аудио, левый канал
-#define SOUND_R_FREQ A3    // аналоговый пин вход аудио для режима с частотами (через кондер)
+#define SOUND_R_FREQ A2    // аналоговый пин вход аудио для режима с частотами (через кондер)
 #define BTN_PIN 3          // кнопка переключения режимов (PIN --- КНОПКА --- GND)
 
 #if defined(__AVR_ATmega32U4__) // Пины для Arduino Pro Micro (смотри схему для Pro Micro на странице проекта!!!)
@@ -61,26 +61,28 @@ float RAINBOW_STEP = 5.00;         // шаг изменения цвета ра�
 
 // ----- сигнал
 #define MONO 1                    // 1 - только один канал (ПРАВЫЙ!!!!! SOUND_R!!!!!), 0 - два канала
-#define EXP 1.4                   // степень усиления сигнала (для более "резкой" работы) (по умолчанию 1.4)
+#define EXP 1.5                   // степень усиления сигнала (для более "резкой" работы) (по умолчанию 1.4)
 #define POTENT 0                  // 1 - используем потенциометр, 0 - используется внутренний источник опорного напряжения 1.1 В
 byte EMPTY_BRIGHT = 30;           // яркость "не горящих" светодиодов (0 - 255)
 #define EMPTY_COLOR HUE_PURPLE    // цвет "не горящих" светодиодов. Будет чёрный, если яркость 0
 
 // ----- нижний порог шумов
-uint16_t LOW_PASS = 100;          // нижний порог шумов режим VU, ручная настройка
-uint16_t SPEKTR_LOW_PASS = 40;    // нижний порог шумов режим спектра, ручная настройка
+uint16_t LOW_PASS = 0;          // нижний порог шумов режим VU, ручная настройка
+uint16_t SPEKTR_LOW_PASS = 0;    // нижний порог шумов режим спектра, ручная настройка
 #define AUTO_LOW_PASS 0           // разрешить настройку нижнего порога шумов при запуске (по умолч. 0)
 #define EEPROM_LOW_PASS 1         // порог шумов хранится в энергонезависимой памяти (по умолч. 1)
 #define LOW_PASS_ADD 13           // "добавочная" величина к нижнему порогу, для надёжности (режим VU)
 #define LOW_PASS_FREQ_ADD 3       // "добавочная" величина к нижнему порогу, для надёжности (режим частот)
 
 // ----- режим шкала громкости
-float SMOOTH = 0.3;               // коэффициент плавности анимации VU (по умолчанию 0.5)
-#define MAX_COEF 1.8              // коэффициент громкости (максимальное равно срднему * этот коэф) (по умолчанию 1.8)
+float SMOOTH = 0.8;               // коэффициент плавности анимации VU (по умолчанию 0.5)
+#define MAX_COEF 1.2              // коэффициент громкости (максимальное равно срднему * этот коэф) (по умолчанию 1.8)
 
 // ----- режим цветомузыки
 float SMOOTH_FREQ = 0.8;          // коэффициент плавности анимации частот (по умолчанию 0.8)
-float MAX_COEF_FREQ = 1.2;        // коэффициент порога для "вспышки" цветомузыки (по умолчанию 1.5)
+float MAX_COEF_FREQ = 1.1;        // коэффициент порога для "вспышки" цветомузыки (по умолчанию 1.5)
+float MAX_COEF_FREQ0 = 1.1;        // коэффициент порога для "вспышки" цветомузыки низких частот
+
 #define SMOOTH_STEP 20            // шаг уменьшения яркости в режиме цветомузыки (чем больше, тем быстрее гаснет)
 #define LOW_COLOR HUE_RED         // цвет низких частот
 #define MID_COLOR HUE_GREEN       // цвет средних
@@ -107,6 +109,16 @@ byte RUNNING_SPEED = 11;
 byte HUE_START = 0;
 byte HUE_STEP = 5;
 #define LIGHT_SMOOTH 2
+
+//-- для определения границ анализа спектра
+float avgFht;
+float sigma;
+int toneCount;
+
+
+
+
+
 
 /*
   Цвета для HSV
@@ -218,21 +230,33 @@ DEFINE_GRADIENT_PALETTE(soundlevel_gp) {
 CRGBPalette32 myPal = soundlevel_gp;
 
 int Rlenght, Llenght;
-float RsoundLevel, RsoundLevel_f;
+float RsoundLevel, RsoundLevel_f, minLevel_f;
 float LsoundLevel, LsoundLevel_f;
 
-float averageLevel = 50;
-int maxLevel = 100;
+float averageLevel = -1;
+float averageLevelMin = 0;
+float maxLevel;
+float minLevel = 100;
+
+int rMinLevel = 1023;
+int rMaxLevel = 0;
+float avgMinRealLevel = 0;
+float avgMaxRealLevel = 50;
+int avrageMinLevel=0;
+
 int MAX_CH = NUM_LEDS / 2;
 int hue;
 unsigned long main_timer, hue_timer, strobe_timer, running_timer, color_timer, rainbow_timer, eeprom_timer;
-float averK = 0.006;
+float averK = 0.05;
+float averKFreg = 0.3;  
+float averKFreg0 = 0.3;
 byte count;
 float index = (float)255 / MAX_CH;   // коэффициент перевода для палитры
 boolean lowFlag;
 byte low_pass;
 int RcurrentLevel, LcurrentLevel;
 int colorMusic[3];
+int toneColorCount[3];
 float colorMusic_f[3], colorMusic_aver[3];
 boolean colorMusicFlash[3], strobeUp_flag, strobeDwn_flag;
 byte this_mode = MODE;
@@ -269,7 +293,8 @@ void setup() {
   butt1.setTimeout(900);
 
   IRLremote.begin(IR_PIN);
-
+  analogReference(INTERNAL);
+/*
   // для увеличения точности уменьшаем опорное напряжение,
   // выставив EXTERNAL и подключив Aref к выходу 3.3V на плате через делитель
   // GND ---[10-20 кОм] --- REF --- [10 кОм] --- 3V3
@@ -281,7 +306,8 @@ void setup() {
 #else
     analogReference(INTERNAL);
 #endif
-
+*/
+  // автор этих комментариев долбоеб:
   // жуткая магия, меняем частоту оцифровки до 18 кГц
   // команды на ебучем ассемблере, даже не спрашивайте, как это работает
   // поднимаем частоту опроса аналогового порта до 38.4 кГц, по теореме
@@ -351,84 +377,60 @@ void mainLoop() {
       // сбрасываем значения
       RsoundLevel = 0;
       LsoundLevel = 0;
+      rMinLevel=1023;
+      rMaxLevel=0;
 
+
+      analyzeAudio();
       // перваые два режима - громкость (VU meter)
       if (this_mode == 0 || this_mode == 1) {
-        for (byte i = 0; i < 100; i ++) {                                 // делаем 100 измерений
-          RcurrentLevel = analogRead(SOUND_R);                            // с правого
-          if (!MONO) LcurrentLevel = analogRead(SOUND_L);                 // и левого каналов
-
-          if (RsoundLevel < RcurrentLevel) RsoundLevel = RcurrentLevel;   // ищем максимальное
-          if (!MONO) if (LsoundLevel < LcurrentLevel) LsoundLevel = LcurrentLevel;   // ищем максимальное
-        }
-
-        // фильтруем по нижнему порогу шумов
-        RsoundLevel = map(RsoundLevel, LOW_PASS, 1023, 0, 500);
-        if (!MONO)LsoundLevel = map(LsoundLevel, LOW_PASS, 1023, 0, 500);
-
-        // ограничиваем диапазон
-        RsoundLevel = constrain(RsoundLevel, 0, 500);
-        if (!MONO)LsoundLevel = constrain(LsoundLevel, 0, 500);
-
-        // возводим в степень (для большей чёткости работы)
-        RsoundLevel = pow(RsoundLevel, EXP);
-        if (!MONO)LsoundLevel = pow(LsoundLevel, EXP);
-
-        // фильтр
-        RsoundLevel_f = RsoundLevel * SMOOTH + RsoundLevel_f * (1 - SMOOTH);
-        if (!MONO)LsoundLevel_f = LsoundLevel * SMOOTH + LsoundLevel_f * (1 - SMOOTH);
-
-        if (MONO) LsoundLevel_f = RsoundLevel_f;  // если моно, то левый = правому
-
         // заливаем "подложку", если яркость достаточная
         if (EMPTY_BRIGHT > 5) {
           for (int i = 0; i < NUM_LEDS; i++)
             leds[i] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
         }
 
-        // если значение выше порога - начинаем самое интересное
-        if (RsoundLevel_f > 15 && LsoundLevel_f > 15) {
+        // преобразуем сигнал в длину ленты (где MAX_CH это половина количества светодиодов)
+        Rlenght = map(RsoundLevel_f, minLevel_f, maxLevel, 0, MAX_CH);
+        Llenght = map(LsoundLevel_f, minLevel_f, maxLevel, 0, MAX_CH);
 
-          // расчёт общей средней громкости с обоих каналов, фильтрация.
-          // Фильтр очень медленный, сделано специально для автогромкости
-          averageLevel = (float)(RsoundLevel_f + LsoundLevel_f) / 2 * averK + averageLevel * (1 - averK);
 
-          // принимаем максимальную громкость шкалы как среднюю, умноженную на некоторый коэффициент MAX_COEF
-          maxLevel = (float)averageLevel * MAX_COEF;
+        // ограничиваем до макс. числа светодиодов
+        Rlenght = constrain(Rlenght, 0, MAX_CH);
+        Llenght = constrain(Llenght, 0, MAX_CH);
 
-          // преобразуем сигнал в длину ленты (где MAX_CH это половина количества светодиодов)
-          Rlenght = map(RsoundLevel_f, 0, maxLevel, 0, MAX_CH);
-          Llenght = map(LsoundLevel_f, 0, maxLevel, 0, MAX_CH);
+        animation();       // отрисовать
 
-          // ограничиваем до макс. числа светодиодов
-          Rlenght = constrain(Rlenght, 0, MAX_CH);
-          Llenght = constrain(Llenght, 0, MAX_CH);
-
-          animation();       // отрисовать
-        }
       }
 
       // 3-5 режим - цветомузыка
       if (this_mode == 2 || this_mode == 3 || this_mode == 4 || this_mode == 7 || this_mode == 8) {
-        analyzeAudio();
         colorMusic[0] = 0;
         colorMusic[1] = 0;
         colorMusic[2] = 0;
+        toneColorCount[0]=0;
+        toneColorCount[1]=0;
+        toneColorCount[2]=0;
+
         for (int i = 0 ; i < 32 ; i++) {
           if (fht_log_out[i] < SPEKTR_LOW_PASS) fht_log_out[i] = 0;
         }
         // низкие частоты, выборка со 2 по 5 тон (0 и 1 зашумленные!)
         for (byte i = 2; i < 6; i++) {
-          if (fht_log_out[i] > colorMusic[0]) colorMusic[0] = fht_log_out[i];
+         // if (fht_log_out[i] > colorMusic[0]) colorMusic[0] = fht_log_out[i];
+          colorMusic[0]+=fht_log_out[i];
         }
         // средние частоты, выборка с 6 по 10 тон
         for (byte i = 6; i < 11; i++) {
-          if (fht_log_out[i] > colorMusic[1]) colorMusic[1] = fht_log_out[i];
+          //if (fht_log_out[i] > colorMusic[1]) colorMusic[1] = fht_log_out[i];
+          colorMusic[1]+=fht_log_out[i];
         }
         // высокие частоты, выборка с 11 по 31 тон
         for (byte i = 11; i < 32; i++) {
-          if (fht_log_out[i] > colorMusic[2]) colorMusic[2] = fht_log_out[i];
+          //if (fht_log_out[i] > colorMusic[2]) colorMusic[2] = fht_log_out[i];
+          colorMusic[2]+=fht_log_out[i];
         }
+        
         freq_max = 0;
         for (byte i = 0; i < 30; i++) {
           if (fht_log_out[i + 2] > freq_max) freq_max = fht_log_out[i + 2];
@@ -438,21 +440,37 @@ void mainLoop() {
           if (freq_f[i] > 0) freq_f[i] -= LIGHT_SMOOTH;
           else freq_f[i] = 0;
         }
-        freq_max_f = freq_max * averK + freq_max_f * (1 - averK);
+        freq_max_f = freq_max * averKFreg + freq_max_f * (1 - averKFreg);
         for (byte i = 0; i < 3; i++) {
-          colorMusic_aver[i] = colorMusic[i] * averK + colorMusic_aver[i] * (1 - averK);  // общая фильтрация
+
+          if(i==0){
+            colorMusic_aver[i] = colorMusic[i] * averKFreg0 + colorMusic_aver[i] * (1 - averKFreg0);  // общая фильтрация
+          }
+          else{
+            colorMusic_aver[i] = colorMusic[i] * averKFreg + colorMusic_aver[i] * (1 - averKFreg);  // общая фильтрация
+          }
           colorMusic_f[i] = colorMusic[i] * SMOOTH_FREQ + colorMusic_f[i] * (1 - SMOOTH_FREQ);      // локальная
-          if (colorMusic_f[i] > ((float)colorMusic_aver[i] * MAX_COEF_FREQ)) {
+          if  ( (colorMusic_f[i] > ((float)colorMusic_aver[i] * MAX_COEF_FREQ)) || (i==0 && (colorMusic_f[i] > ((float)colorMusic_aver[i] * MAX_COEF_FREQ0))  )  ) {
             thisBright[i] = 255;
             colorMusicFlash[i] = true;
             running_flag[i] = true;
           } else colorMusicFlash[i] = false;
+
+          
           if (thisBright[i] >= 0) thisBright[i] -= SMOOTH_STEP;
           if (thisBright[i] < EMPTY_BRIGHT) {
             thisBright[i] = EMPTY_BRIGHT;
             running_flag[i] = false;
           }
+          /*
+          Serial.println(F("  ")); 
+          Serial.print(i);Serial.print(F(": colorMusic_f: "));   Serial.print(colorMusic_f[i]);
+          Serial.print(F(": colorMusic_aver: "));   Serial.print(colorMusic_aver[i]);
+          Serial.print(F(": thisBright: "));   Serial.print(thisBright[i]);
+          */
         }
+
+        //Serial.println(F("  ")); 
         animation();
       }
       if (this_mode == 5) {
@@ -461,6 +479,8 @@ void mainLoop() {
           strobeUp_flag = true;
           strobeDwn_flag = false;
         }
+        
+        
         if ((long)millis() - strobe_timer > light_time) {
           strobeDwn_flag = true;
         }
@@ -481,6 +501,14 @@ void mainLoop() {
             strobe_bright = 0;                  // оставить 0
           }
         }
+
+/*
+        Serial.println(F(" "));
+        Serial.print(F("strobeUp_flag: "));Serial.print(strobeUp_flag);
+        Serial.print(F("    trobeDwn_flag: "));Serial.print(strobeDwn_flag);
+        Serial.print(F("    strobe_bright: "));Serial.print(strobe_bright);
+
+*/        
         animation();
       }
       if (this_mode == 6) animation();
@@ -585,54 +613,15 @@ void animation() {
         for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
       break;
     case 6:
-      switch (light_mode) {
-        case 0: for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(LIGHT_COLOR, LIGHT_SAT, 255);
-          break;
-        case 1:
-          if (millis() - color_timer > COLOR_SPEED) {
-            color_timer = millis();
-            if (++this_color > 255) this_color = 0;
-          }
-          for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(this_color, LIGHT_SAT, 255);
-          break;
-        case 2:
-          if (millis() - rainbow_timer > 30) {
-            rainbow_timer = millis();
-            this_color += RAINBOW_PERIOD;
-            if (this_color > 255) this_color = 0;
-            if (this_color < 0) this_color = 255;
-          }
-          rainbow_steps = this_color;
-          for (int i = 0; i < NUM_LEDS; i++) {
-            leds[i] = CHSV((int)floor(rainbow_steps), 255, 255);
-            rainbow_steps += RAINBOW_STEP_2;
-            if (rainbow_steps > 255) rainbow_steps = 0;
-            if (rainbow_steps < 0) rainbow_steps = 255;
-          }
-          break;
-      }
+       for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(HUE_YELLOW, LIGHT_SAT, 200);
       break;
     case 7:
-      switch (freq_strobe_mode) {
-        case 0:
-          if (running_flag[2]) leds[NUM_LEDS / 2] = CHSV(HIGH_COLOR, 255, thisBright[2]);
-          else if (running_flag[1]) leds[NUM_LEDS / 2] = CHSV(MID_COLOR, 255, thisBright[1]);
-          else if (running_flag[0]) leds[NUM_LEDS / 2] = CHSV(LOW_COLOR, 255, thisBright[0]);
-          else leds[NUM_LEDS / 2] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
-          break;
-        case 1:
-          if (running_flag[2]) leds[NUM_LEDS / 2] = CHSV(HIGH_COLOR, 255, thisBright[2]);
-          else leds[NUM_LEDS / 2] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
-          break;
-        case 2:
-          if (running_flag[1]) leds[NUM_LEDS / 2] = CHSV(MID_COLOR, 255, thisBright[1]);
-          else leds[NUM_LEDS / 2] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
-          break;
-        case 3:
-          if (running_flag[0]) leds[NUM_LEDS / 2] = CHSV(LOW_COLOR, 255, thisBright[0]);
-          else leds[NUM_LEDS / 2] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
-          break;
-      }
+
+        if (running_flag[2]) leds[NUM_LEDS / 2] = CHSV(HIGH_COLOR, 255, thisBright[2]);
+        else if (running_flag[1]) leds[NUM_LEDS / 2] = CHSV(MID_COLOR, 255, thisBright[1]);
+        else if (running_flag[0]) leds[NUM_LEDS / 2] = CHSV(LOW_COLOR, 255, thisBright[0]);
+        else leds[NUM_LEDS / 2] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
+     
       leds[(NUM_LEDS / 2) - 1] = leds[NUM_LEDS / 2];
       if (millis() - running_timer > RUNNING_SPEED) {
         running_timer = millis();
@@ -868,6 +857,8 @@ void remoteTick() {
 #endif
 
 void autoLowPass() {
+
+  return ;
   // для режима VU
   delay(10);                                // ждём инициализации АЦП
   int thisMax = 0;                          // максимум
@@ -899,14 +890,119 @@ void autoLowPass() {
 }
 
 void analyzeAudio() {
+
+  RsoundLevel = 0;
+  LsoundLevel = 0;
+  rMinLevel=1023;
+  rMaxLevel=0;
+  
   for (int i = 0 ; i < FHT_N ; i++) {
-    int sample = analogRead(SOUND_R_FREQ);
-    fht_input[i] = sample; // put real data into bins
+    RcurrentLevel = analogRead(SOUND_R);                            // с правого
+    RsoundLevel += RcurrentLevel;
+    if (rMinLevel > RcurrentLevel) rMinLevel = RcurrentLevel; // ищем максимальное
+    if (rMaxLevel < RcurrentLevel) rMaxLevel = RcurrentLevel; // ищем максимальное
+    fht_input[i] = RcurrentLevel; // put real data into bins
   }
-  fht_window();  // window the data for better frequency response
-  fht_reorder(); // reorder the data before doing the fht
-  fht_run();     // process the data in the fht
-  fht_mag_log(); // take the output of the fht
+
+   //Serial.println(F("  "));
+  RsoundLevel =rMaxLevel;
+
+  //Serial.print(F("RsoundLevel1: ")); Serial.print(RsoundLevel);
+  //Serial.print(F("  rMinLevel: ")); Serial.print(rMinLevel);
+
+
+  avgMinRealLevel = (float)rMinLevel  * averK + avgMinRealLevel * (1 - averK);
+  avgMaxRealLevel = (float)rMaxLevel  * averK + avgMaxRealLevel * (1 - averK);
+  //Serial.print(F("  avgMinRealLevel: ")); Serial.print(avgMinRealLevel);
+  //Serial.print(F("  avgMaxRealLevel: ")); Serial.print(avgMaxRealLevel);
+
+
+  // фильтруем по нижнему порогу шумов
+  // ограничиваем диапазон
+  RsoundLevel = pow(RsoundLevel, EXP);
+  rMinLevel= pow(rMinLevel, EXP);
+  //Serial.print(F("  RsoundLevelPow: ")); Serial.print(RsoundLevel);
+  //Serial.print(F("  rMinLevelPow: ")); Serial.print(rMinLevel);
+  
+  // фильтр
+  RsoundLevel_f = RsoundLevel * SMOOTH + RsoundLevel_f * (1 - SMOOTH);
+  //Serial.print(F("  RsoundLevel_f: ")); Serial.print(RsoundLevel_f);
+
+  minLevel_f = rMinLevel * averK + minLevel_f * (1 - averK);
+  //Serial.print(F("  minLevel_f: ")); Serial.print(minLevel_f);
+
+  
+  LsoundLevel_f = RsoundLevel_f;  // если моно, то левый = правому
+
+  // расчёт общей средней громкости с обоих каналов, фильтрация.
+  // Фильтр очень медленный, сделано специально для автогромкости
+  if (averageLevel<0){
+    averageLevel=RsoundLevel_f;
+  }
+  
+  averageLevel = (float)RsoundLevel_f  * averK + averageLevel * (1 - averK);
+
+  // принимаем максимальную громкость шкалы как среднюю, умноженную на некоторый коэффициент MAX_COEF
+  maxLevel = (float)averageLevel * MAX_COEF;
+
+  if (minLevel_f>maxLevel) minLevel_f=maxLevel-1;
+  //Serial.print(F("  maxLevel: ")); Serial.print(maxLevel);
+
+
+  if (this_mode == 2 || this_mode == 3 || this_mode == 4 || this_mode == 7 || this_mode == 8) {
+
+        
+        float mult=1/(avgMaxRealLevel-avgMinRealLevel)*1000;
+        
+        //Serial.println(F("  "));
+        for (int i = 0 ; i < FHT_N ; i++) {
+          fht_input[i] = (fht_input[i]-avgMinRealLevel)*mult;
+          //Serial.print(F("  ")); Serial.print(fht_input[i]);
+        }
+        
+        
+        
+        fht_window();  // window the data for better frequency response
+        fht_reorder(); // reorder the data before doing the fht
+        fht_run();     // process the data in the fht
+        fht_mag_log(); // take the output of the fht
+        //Serial.println(F("  "));
+        avgFht=0;
+        toneCount=0;
+
+        for (int i = 2 ; i < 32 ; i++) {
+          if (fht_log_out[i]>8){
+              toneCount++;
+              avgFht+=fht_log_out[i];
+            }
+          
+         // Serial.print(fht_log_out[i]);Serial.print(F("  "));
+        }
+/*
+        Serial.println(F("  "));
+        sigma=0;
+
+        if (toneCount>0){
+          avgFht/=toneCount;
+          
+          for (int i = 2 ; i < 32 ; i++) {
+              sigma+=(fht_log_out[i]-avgFht)*(fht_log_out[i]-avgFht);
+          }
+          sigma=sqrt(sigma/toneCount);
+
+          //Serial.print(F("  avgFht: ")); Serial.print(avgFht);
+          //Serial.print(F("  sigma: ")); Serial.print(sigma);
+       }
+       else {
+          sigma=100000;  
+      }
+  */      
+  }
+
+/*
+  Serial.println(F(" "));
+  Serial.println(F(" "));
+  */
 }
 
 void buttonTick() {

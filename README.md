@@ -1,3 +1,8 @@
+# Светомузыка на Arduino Fix поделки
+Если у вас ничего не работает, то выкидывайте из своей схемы потенциометр, кондер на 3-й вход ардуинки, прошивайте и радуйтесь.
+
+
+
 ![PROJECT_PHOTO](https://github.com/AlexGyver/ColorMusic/blob/master/proj_img.jpg)
 # Светомузыка на Arduino и WS2812b
 * [Описание проекта](#chapter-0)
