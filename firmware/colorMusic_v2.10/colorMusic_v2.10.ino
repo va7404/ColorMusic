@@ -614,6 +614,7 @@ void animation() {
       break;
     case 6:
        for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(HUE_YELLOW, LIGHT_SAT, 200);
+       //for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(HUE_YELLOW, 0, 200);
       break;
     case 7:
 
