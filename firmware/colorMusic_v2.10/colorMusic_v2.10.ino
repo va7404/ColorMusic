@@ -323,8 +323,8 @@ void setup() {
     autoLowPass();
   }
   if (EEPROM_LOW_PASS) {                // восстановить значения шумов из памяти
-    LOW_PASS = EEPROM.readInt(70);
-    SPEKTR_LOW_PASS = EEPROM.readInt(72);
+    //LOW_PASS = EEPROM.readInt(70);
+    //SPEKTR_LOW_PASS = EEPROM.readInt(72);
   }
 
   // в 100 ячейке хранится число 100. Если нет - значит это первый запуск системы
@@ -976,7 +976,7 @@ void analyzeAudio() {
               avgFht+=fht_log_out[i];
             }
           
-         // Serial.print(fht_log_out[i]);Serial.print(F("  "));
+          //Serial.print(fht_log_out[i]);Serial.print(F("  "));
         }
 /*
         Serial.println(F("  "));
