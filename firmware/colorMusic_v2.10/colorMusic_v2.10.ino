@@ -83,7 +83,7 @@ float SMOOTH_FREQ = 0.8;          // коэффициент плавности �
 float MAX_COEF_FREQ = 1.1;        // коэффициент порога для "вспышки" цветомузыки (по умолчанию 1.5)
 float MAX_COEF_FREQ0 = 1.1;        // коэффициент порога для "вспышки" цветомузыки низких частот
 
-#define SMOOTH_STEP 20            // шаг уменьшения яркости в режиме цветомузыки (чем больше, тем быстрее гаснет)
+int SMOOTH_STEP=20;            // шаг уменьшения яркости в режиме цветомузыки (чем больше, тем быстрее гаснет)
 #define LOW_COLOR HUE_RED         // цвет низких частот
 #define MID_COLOR HUE_GREEN       // цвет средних
 #define HIGH_COLOR HUE_YELLOW     // цвет высоких
@@ -264,7 +264,7 @@ int thisBright[3], strobe_bright = 0;
 unsigned int light_time = STROBE_PERIOD * STROBE_DUTY / 100;
 volatile boolean ir_flag;
 boolean settings_mode, ONstate = true;
-int8_t freq_strobe_mode, light_mode;
+//int8_t freq_strobe_mode, light_mode;
 int freq_max;
 float freq_max_f, rainbow_steps;
 int freq_f[32];
@@ -340,8 +340,6 @@ void setup() {
 
 #if (SETTINGS_LOG == 1)
   Serial.print(F("this_mode = ")); Serial.println(this_mode);
-  Serial.print(F("freq_strobe_mode = ")); Serial.println(freq_strobe_mode);
-  Serial.print(F("light_mode = ")); Serial.println(light_mode);
   Serial.print(F("RAINBOW_STEP = ")); Serial.println(RAINBOW_STEP);
   Serial.print(F("MAX_COEF_FREQ = ")); Serial.println(MAX_COEF_FREQ);
   Serial.print(F("STROBE_PERIOD = ")); Serial.println(STROBE_PERIOD);
@@ -585,27 +583,13 @@ void animation() {
       }
       break;
     case 4:
-      switch (freq_strobe_mode) {
-        case 0:
-          if (colorMusicFlash[2]) HIGHS();
-          else if (colorMusicFlash[1]) MIDS();
-          else if (colorMusicFlash[0]) LOWS();
-          else SILENCE();
-          break;
-        case 1:
-          if (colorMusicFlash[2]) HIGHS();
-          else SILENCE();
-          break;
-        case 2:
-          if (colorMusicFlash[1]) MIDS();
-          else SILENCE();
-          break;
-        case 3:
-          if (colorMusicFlash[0]) LOWS();
-          else SILENCE();
-          break;
-      }
+    
+      if (colorMusicFlash[2]) HIGHS();
+      else if (colorMusicFlash[1]) MIDS();
+      else if (colorMusicFlash[0]) LOWS();
+      else SILENCE();
       break;
+      
     case 5:
       if (strobe_bright > 0)
         for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(STROBE_COLOR, STROBE_SAT, strobe_bright);
@@ -613,8 +597,7 @@ void animation() {
         for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(EMPTY_COLOR, 255, EMPTY_BRIGHT);
       break;
     case 6:
-       for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(HUE_YELLOW, LIGHT_SAT, 200);
-       //for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(HUE_YELLOW, 0, 200);
+       for (int i = 0; i < NUM_LEDS; i++) leds[i] = CHSV(HUE_YELLOW, 0,BRIGHTNESS);
       break;
     case 7:
 
@@ -635,7 +618,7 @@ void animation() {
     case 8:
       byte HUEindex = HUE_START;
       for (int i = 0; i < NUM_LEDS / 2; i++) {
-        byte this_bright = map(freq_f[(int)floor((NUM_LEDS / 2 - i) / freq_to_stripe)], 0, freq_max_f, 0, 255);
+        byte this_bright = map(freq_f[(int)floor((NUM_LEDS / 2 - i) / freq_to_stripe)], 0, freq_max_f, 0, BRIGHTNESS);
         this_bright = constrain(this_bright, 0, 255);
         leds[i] = CHSV(HUEindex, 255, this_bright);
         leds[NUM_LEDS - i - 1] = leds[i];
@@ -707,147 +690,24 @@ void remoteTick() {
       case BUTT_STAR: ONstate = !ONstate; FastLED.clear(); FastLED.show(); updateEEPROM();
         break;
       case BUTT_HASH:
-        switch (this_mode) {
-          case 4:
-          case 7: if (++freq_strobe_mode > 3) freq_strobe_mode = 0;
-            break;
-          case 6: if (++light_mode > 2) light_mode = 0;
-            break;
-        }
+
+      
         break;
       case BUTT_OK: digitalWrite(MLED_PIN, settings_mode ^ MLED_ON); settings_mode = !settings_mode;
         break;
       case BUTT_UP:
-        if (settings_mode) {
-          // ВВЕРХ общие настройки
-          EMPTY_BRIGHT = smartIncr(EMPTY_BRIGHT, 5, 0, 255);
-        } else {
-          switch (this_mode) {
-            case 0:
-              break;
-            case 1: RAINBOW_STEP = smartIncrFloat(RAINBOW_STEP, 0.5, 0.5, 20);
-              break;
-            case 2:
-            case 3:
-            case 4: MAX_COEF_FREQ = smartIncrFloat(MAX_COEF_FREQ, 0.1, 0, 5);
-              break;
-            case 5: STROBE_PERIOD = smartIncr(STROBE_PERIOD, 20, 1, 1000);
-              break;
-            case 6:
-              switch (light_mode) {
-                case 0: LIGHT_SAT = smartIncr(LIGHT_SAT, 20, 0, 255);
-                  break;
-                case 1: LIGHT_SAT = smartIncr(LIGHT_SAT, 20, 0, 255);
-                  break;
-                case 2: RAINBOW_STEP_2 = smartIncrFloat(RAINBOW_STEP_2, 0.5, 0.5, 10);
-                  break;
-              }
-              break;
-            case 7: MAX_COEF_FREQ = smartIncrFloat(MAX_COEF_FREQ, 0.1, 0.0, 10);
-              break;
-            case 8: HUE_START = smartIncr(HUE_START, 10, 0, 255);
-              break;
-          }
-        }
+        BRIGHTNESS = smartIncr(BRIGHTNESS, 10, 0, 255);
+        setBrightness();
         break;
       case BUTT_DOWN:
-        if (settings_mode) {
-          // ВНИЗ общие настройки
-          EMPTY_BRIGHT = smartIncr(EMPTY_BRIGHT, -5, 0, 255);
-        } else {
-          switch (this_mode) {
-            case 0:
-              break;
-            case 1: RAINBOW_STEP = smartIncrFloat(RAINBOW_STEP, -0.5, 0.5, 20);
-              break;
-            case 2:
-            case 3:
-            case 4: MAX_COEF_FREQ = smartIncrFloat(MAX_COEF_FREQ, -0.1, 0, 5);
-              break;
-            case 5: STROBE_PERIOD = smartIncr(STROBE_PERIOD, -20, 1, 1000);
-              break;
-            case 6:
-              switch (light_mode) {
-                case 0: LIGHT_SAT = smartIncr(LIGHT_SAT, -20, 0, 255);
-                  break;
-                case 1: LIGHT_SAT = smartIncr(LIGHT_SAT, -20, 0, 255);
-                  break;
-                case 2: RAINBOW_STEP_2 = smartIncrFloat(RAINBOW_STEP_2, -0.5, 0.5, 10);
-                  break;
-              }
-              break;
-            case 7: MAX_COEF_FREQ = smartIncrFloat(MAX_COEF_FREQ, -0.1, 0.0, 10);
-              break;
-            case 8: HUE_START = smartIncr(HUE_START, -10, 0, 255);
-              break;
-          }
-        }
+        BRIGHTNESS = smartIncr(BRIGHTNESS, -10, 0, 255);
+        setBrightness();
         break;
       case BUTT_LEFT:
-        if (settings_mode) {
-          // ВЛЕВО общие настройки
-          BRIGHTNESS = smartIncr(BRIGHTNESS, -20, 0, 255);
-          FastLED.setBrightness(BRIGHTNESS);
-        } else {
-          switch (this_mode) {
-            case 0:
-            case 1: SMOOTH = smartIncrFloat(SMOOTH, -0.05, 0.05, 1);
-              break;
-            case 2:
-            case 3:
-            case 4: SMOOTH_FREQ = smartIncrFloat(SMOOTH_FREQ, -0.05, 0.05, 1);
-              break;
-            case 5: STROBE_SMOOTH = smartIncr(STROBE_SMOOTH, -20, 0, 255);
-              break;
-            case 6:
-              switch (light_mode) {
-                case 0: LIGHT_COLOR = smartIncr(LIGHT_COLOR, -10, 0, 255);
-                  break;
-                case 1: COLOR_SPEED = smartIncr(COLOR_SPEED, -10, 0, 255);
-                  break;
-                case 2: RAINBOW_PERIOD = smartIncr(RAINBOW_PERIOD, -1, -20, 20);
-                  break;
-              }
-              break;
-            case 7: RUNNING_SPEED = smartIncr(RUNNING_SPEED, -10, 1, 255);
-              break;
-            case 8: HUE_STEP = smartIncr(HUE_STEP, -1, 1, 255);
-              break;
-          }
-        }
+       
         break;
       case BUTT_RIGHT:
-        if (settings_mode) {
-          // ВПРАВО общие настройки
-          BRIGHTNESS = smartIncr(BRIGHTNESS, 20, 0, 255);
-          FastLED.setBrightness(BRIGHTNESS);
-        } else {
-          switch (this_mode) {
-            case 0:
-            case 1: SMOOTH = smartIncrFloat(SMOOTH, 0.05, 0.05, 1);
-              break;
-            case 2:
-            case 3:
-            case 4: SMOOTH_FREQ = smartIncrFloat(SMOOTH_FREQ, 0.05, 0.05, 1);
-              break;
-            case 5: STROBE_SMOOTH = smartIncr(STROBE_SMOOTH, 20, 0, 255);
-              break;
-            case 6:
-              switch (light_mode) {
-                case 0: LIGHT_COLOR = smartIncr(LIGHT_COLOR, 10, 0, 255);
-                  break;
-                case 1: COLOR_SPEED = smartIncr(COLOR_SPEED, 10, 0, 255);
-                  break;
-                case 2: RAINBOW_PERIOD = smartIncr(RAINBOW_PERIOD, 1, -20, 20);
-                  break;
-              }
-              break;
-            case 7: RUNNING_SPEED = smartIncr(RUNNING_SPEED, 10, 1, 255);
-              break;
-            case 8: HUE_STEP = smartIncr(HUE_STEP, 1, 1, 255);
-              break;
-          }
-        }
+        
         break;
       default: eeprom_flag = false;   // если не распознали кнопку, не обновляем настройки!
         break;
@@ -1028,45 +888,16 @@ void fullLowPass() {
 }
 void updateEEPROM() {
   EEPROM.updateByte(1, this_mode);
-  EEPROM.updateByte(2, freq_strobe_mode);
-  EEPROM.updateByte(3, light_mode);
-  EEPROM.updateInt(4, RAINBOW_STEP);
-  EEPROM.updateFloat(8, MAX_COEF_FREQ);
-  EEPROM.updateInt(12, STROBE_PERIOD);
-  EEPROM.updateInt(16, LIGHT_SAT);
-  EEPROM.updateFloat(20, RAINBOW_STEP_2);
-  EEPROM.updateInt(24, HUE_START);
-  EEPROM.updateFloat(28, SMOOTH);
-  EEPROM.updateFloat(32, SMOOTH_FREQ);
-  EEPROM.updateInt(36, STROBE_SMOOTH);
-  EEPROM.updateInt(40, LIGHT_COLOR);
-  EEPROM.updateInt(44, COLOR_SPEED);
-  EEPROM.updateInt(48, RAINBOW_PERIOD);
-  EEPROM.updateInt(52, RUNNING_SPEED);
-  EEPROM.updateInt(56, HUE_STEP);
-  EEPROM.updateInt(60, EMPTY_BRIGHT);
-  if (KEEP_STATE) EEPROM.updateByte(64, ONstate);
+  EEPROM.updateByte(1, BRIGHTNESS);
+
 }
 void readEEPROM() {
   this_mode = EEPROM.readByte(1);
-  freq_strobe_mode = EEPROM.readByte(2);
-  light_mode = EEPROM.readByte(3);
-  RAINBOW_STEP = EEPROM.readInt(4);
-  MAX_COEF_FREQ = EEPROM.readFloat(8);
-  STROBE_PERIOD = EEPROM.readInt(12);
-  LIGHT_SAT = EEPROM.readInt(16);
-  RAINBOW_STEP_2 = EEPROM.readFloat(20);
-  HUE_START = EEPROM.readInt(24);
-  SMOOTH = EEPROM.readFloat(28);
-  SMOOTH_FREQ = EEPROM.readFloat(32);
-  STROBE_SMOOTH = EEPROM.readInt(36);
-  LIGHT_COLOR = EEPROM.readInt(40);
-  COLOR_SPEED = EEPROM.readInt(44);
-  RAINBOW_PERIOD = EEPROM.readInt(48);
-  RUNNING_SPEED = EEPROM.readInt(52);
-  HUE_STEP = EEPROM.readInt(56);
-  EMPTY_BRIGHT = EEPROM.readInt(60);
-  if (KEEP_STATE) ONstate = EEPROM.readByte(64);
+  BRIGHTNESS= EEPROM.readByte(2);
+
+  setBrightness();
+  
+
 }
 void eepromTick() {
   if (eeprom_flag)
@@ -1076,3 +907,11 @@ void eepromTick() {
       updateEEPROM();
     }
 }
+
+
+void setBrightness(){
+    FastLED.setBrightness(BRIGHTNESS);
+    SMOOTH_STEP=BRIGHTNESS/10;
+    EMPTY_BRIGHT=SMOOTH_STEP;
+    
+  }
