@@ -61,7 +61,7 @@ float RAINBOW_STEP = 5.00;         // шаг изменения цвета ра�
 
 // ----- сигнал
 #define MONO 1                    // 1 - только один канал (ПРАВЫЙ!!!!! SOUND_R!!!!!), 0 - два канала
-#define EXP 1.5                   // степень усиления сигнала (для более "резкой" работы) (по умолчанию 1.4)
+#define EXP 1.35                   // степень усиления сигнала (для более "резкой" работы) (по умолчанию 1.4)
 #define POTENT 0                  // 1 - используем потенциометр, 0 - используется внутренний источник опорного напряжения 1.1 В
 byte EMPTY_BRIGHT = 30;           // яркость "не горящих" светодиодов (0 - 255)
 #define EMPTY_COLOR HUE_PURPLE    // цвет "не горящих" светодиодов. Будет чёрный, если яркость 0
@@ -76,7 +76,7 @@ uint16_t SPEKTR_LOW_PASS = 0;    // нижний порог шумов режи�
 
 // ----- режим шкала громкости
 float SMOOTH = 0.8;               // коэффициент плавности анимации VU (по умолчанию 0.5)
-#define MAX_COEF 1.2              // коэффициент громкости (максимальное равно срднему * этот коэф) (по умолчанию 1.8)
+#define MAX_COEF 1.08              // коэффициент громкости (максимальное равно срднему * этот коэф) (по умолчанию 1.8)
 
 // ----- режим цветомузыки
 float SMOOTH_FREQ = 0.8;          // коэффициент плавности анимации частот (по умолчанию 0.8)
@@ -203,6 +203,9 @@ int toneCount;
 float freq_to_stripe = NUM_LEDS / 40; // /2 так как симметрия, и /20 так как 20 частот
 
 #define FHT_N 64         // ширина спектра х2
+const int n = 4;
+int levels[FHT_N];     // содержит 4 элемента
+
 #define LOG_OUT 1
 #include <FHT.h>         // преобразование Хартли
 
@@ -244,10 +247,13 @@ float avgMinRealLevel = 0;
 float avgMaxRealLevel = 50;
 int avrageMinLevel=0;
 
+
+
 int MAX_CH = NUM_LEDS / 2;
 int hue;
 unsigned long main_timer, hue_timer, strobe_timer, running_timer, color_timer, rainbow_timer, eeprom_timer;
-float averK = 0.05;
+float averK = 0.2;
+float averKmin = 0.1;
 float averKFreg = 0.3;  
 float averKFreg0 = 0.3;
 byte count;
@@ -663,6 +669,7 @@ void remoteTick() {
     ir_flag = true;
   }
   if (ir_flag) { // если данные пришли
+    Serial.println('remote '+IRdata);
     eeprom_timer = millis();
     eeprom_flag = true;
     switch (IRdata) {
@@ -750,6 +757,17 @@ void autoLowPass() {
   }
 }
 
+int sort_desc(const void *cmp1, const void *cmp2)
+{
+  // Need to cast the void * to int *
+  int a = *((int *)cmp1);
+  int b = *((int *)cmp2);
+  // The comparison
+  return a > b ? -1 : (a < b ? 1 : 0);
+  // A simpler, probably faster way:
+  //return b - a;
+}
+
 void analyzeAudio() {
 
   RsoundLevel = 0;
@@ -760,19 +778,31 @@ void analyzeAudio() {
   for (int i = 0 ; i < FHT_N ; i++) {
     RcurrentLevel = analogRead(SOUND_R);                            // с правого
     RsoundLevel += RcurrentLevel;
+
     if (rMinLevel > RcurrentLevel) rMinLevel = RcurrentLevel; // ищем максимальное
     if (rMaxLevel < RcurrentLevel) rMaxLevel = RcurrentLevel; // ищем максимальное
     fht_input[i] = RcurrentLevel; // put real data into bins
+    levels[i]=RcurrentLevel;  
   }
 
-   //Serial.println(F("  "));
+  int lt_length = sizeof(levels) / sizeof(levels[0]);
+  qsort(levels, lt_length, sizeof(levels[0]), sort_desc);
+  /*
+ for (int i = 0 ; i < FHT_N ; i++) {
+  Serial.println(levels[i]);
+  }
+  */
+  rMinLevel=levels[FHT_N-9];
+  rMaxLevel=levels[15];
+
+
   RsoundLevel =rMaxLevel;
 
   //Serial.print(F("RsoundLevel1: ")); Serial.print(RsoundLevel);
   //Serial.print(F("  rMinLevel: ")); Serial.print(rMinLevel);
 
 
-  avgMinRealLevel = (float)rMinLevel  * averK + avgMinRealLevel * (1 - averK);
+  avgMinRealLevel = (float)rMinLevel  * averK + avgMinRealLevel * (1 - averKmin);
   avgMaxRealLevel = (float)rMaxLevel  * averK + avgMaxRealLevel * (1 - averK);
   //Serial.print(F("  avgMinRealLevel: ")); Serial.print(avgMinRealLevel);
   //Serial.print(F("  avgMaxRealLevel: ")); Serial.print(avgMaxRealLevel);
@@ -782,9 +812,9 @@ void analyzeAudio() {
   // ограничиваем диапазон
   RsoundLevel = pow(RsoundLevel, EXP);
   rMinLevel= pow(rMinLevel, EXP);
-  //Serial.print(F("  RsoundLevelPow: ")); Serial.print(RsoundLevel);
-  //Serial.print(F("  rMinLevelPow: ")); Serial.print(rMinLevel);
-  
+  //Serial.print(F("  RsoundLevel: ")); Serial.print(RsoundLevel);
+  //Serial.print(F("  rMinLevel: ")); Serial.print(rMinLevel);
+ 
   // фильтр
   RsoundLevel_f = RsoundLevel * SMOOTH + RsoundLevel_f * (1 - SMOOTH);
   //Serial.print(F("  RsoundLevel_f: ")); Serial.print(RsoundLevel_f);
@@ -807,8 +837,13 @@ void analyzeAudio() {
   maxLevel = (float)averageLevel * MAX_COEF;
 
   if (minLevel_f>maxLevel) minLevel_f=maxLevel-1;
-  //Serial.print(F("  maxLevel: ")); Serial.print(maxLevel);
-
+  //Serial.print(F("  maxLevel: ")); Serial.println(maxLevel);
+  //Serial.print(F("  averK: ")); Serial.print(averK);
+  //Serial.print(F("  RsoundLevel_f: ")); Serial.print(RsoundLevel_f);
+  //Serial.print(F("  minLevel_f: ")); Serial.print(minLevel_f);
+  //Serial.print(F("  maxLevel: ")); Serial.println(maxLevel  );
+  
+  
 
   if (this_mode == 2 || this_mode == 3 || this_mode == 4 || this_mode == 7 || this_mode == 8) {
 
@@ -893,7 +928,7 @@ void updateEEPROM() {
 }
 void readEEPROM() {
   this_mode = EEPROM.readByte(1);
-  BRIGHTNESS= EEPROM.readByte(2);
+  //BRIGHTNESS= EEPROM.readByte(2);
 
   setBrightness();
   
